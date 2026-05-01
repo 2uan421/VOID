@@ -114,13 +114,29 @@
     .pill-group {
       display: flex;
       gap: 3px;
+      position: relative;
       background: rgba(255,255,255,0.05);
       border: 1px solid rgba(255,255,255,0.09);
       border-radius: 10px;
       padding: 3px;
     }
 
+    /* Sliding glass indicator */
+    .pill-indicator {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      height: calc(100% - 6px);
+      background: rgba(255,255,255,0.13);
+      border-radius: 7px;
+      pointer-events: none;
+      transition: left 0.32s cubic-bezier(0.34, 1.15, 0.64, 1),
+                  width 0.32s cubic-bezier(0.34, 1.15, 0.64, 1);
+    }
+
     .pill {
+      position: relative; /* sit above indicator */
+      z-index: 1;
       padding: 7px 18px;
       border: none;
       border-radius: 7px;
@@ -129,12 +145,9 @@
       font-weight: 500;
       color: rgba(255,255,255,0.38);
       cursor: pointer;
-      transition: background 0.15s, color 0.15s;
+      transition: color 0.2s;
     }
-    .pill.on {
-      background: rgba(255,255,255,0.13);
-      color: rgba(255,255,255,0.90);
-    }
+    .pill.on { color: rgba(255,255,255,0.90); }
 
     /* ── Buttons ── */
     .btn {
@@ -280,12 +293,12 @@
   <div class="glass-card">
     <div class="hero">
       <h1 class="hero-title">Deep Rest.</h1>
-      <p class="hero-sub">과학적 시각 자극과 움직임 감지로<br>완전한 뇌 리셋을 경험하세요.</p>
     </div>
     <div class="g-sep"></div>
     <div class="duration-row">
       <span class="label">휴식 시간</span>
-      <div class="pill-group">
+      <div class="pill-group" id="pill-group">
+        <div class="pill-indicator" id="pill-indicator"></div>
         <button class="pill on" data-min="5">5분</button>
         <button class="pill" data-min="10">10분</button>
         <button class="pill" data-min="15">15분</button>
@@ -375,12 +388,37 @@ function show(id) {
 }
 
 // ── Duration pills ─────────────────────────────────────
+function moveIndicator(pill) {
+  const indicator = document.getElementById('pill-indicator');
+  if (!indicator) return;
+  indicator.style.left  = pill.offsetLeft + 'px';
+  indicator.style.width = pill.offsetWidth + 'px';
+}
+
 document.querySelectorAll('.pill').forEach(p => {
   p.addEventListener('click', () => {
     document.querySelectorAll('.pill').forEach(b => b.classList.remove('on'));
     p.classList.add('on');
     selectedMin = parseInt(p.dataset.min);
+    moveIndicator(p);
   });
+});
+
+// Init indicator to the default selected pill
+window.addEventListener('DOMContentLoaded', () => {
+  const active = document.querySelector('.pill.on');
+  if (active) {
+    const indicator = document.getElementById('pill-indicator');
+    if (indicator) {
+      // Set without transition on first render
+      indicator.style.transition = 'none';
+      indicator.style.left  = active.offsetLeft + 'px';
+      indicator.style.width = active.offsetWidth + 'px';
+      requestAnimationFrame(() => {
+        indicator.style.transition = '';
+      });
+    }
+  }
 });
 
 // ── Init: cooldown check + camera setup ───────────────
