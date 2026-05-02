@@ -750,229 +750,202 @@ function animGeometric(ctx, W, H) {
 
 // ── 1: Nature Calm — Fire ─────────────────────────────
 function animFire(ctx, W, H) {
-  const CX      = W / 2;
-  const BASE_Y  = H * 0.730;
-  const TIP_Y   = H * 0.075;
-  const FIRE_H  = BASE_Y - TIP_Y;
-  const BASE_HW = W * 0.19;
+  const CX = W / 2;
 
-  // ── Multi-frequency turbulence (pseudo-Perlin via summed sines) ──
-  // Returns value in roughly [-1, 1]
-  const turb = (phase, time, seed) =>
-    Math.sin(phase*2.2 + time*0.72 + seed)       * 0.48 +
-    Math.sin(phase*4.7 + time*1.35 + seed*1.8)   * 0.28 +
-    Math.sin(phase*9.3 + time*2.40 + seed*3.1)   * 0.14 +
-    Math.sin(phase*18.1+ time*4.10 + seed*5.2)   * 0.10;
+  // ── Display region (centered tall flame, photo-framing) ──
+  const FW = W * 0.74;              // flame width on screen
+  const FH = H * 0.65;             // flame height on screen
+  const FX = (W - FW) / 2;         // left edge
+  const FY = H * 0.055;            // top edge
+  const BASE_SCR = FY + FH;        // base y on screen
 
-  // ── Flame strip pool: 32 primary + 14 tendril ──
-  // Primary strips have Gaussian x-distribution (center-dense)
-  const mkStrip = (isTendril) => {
-    let xOff;
-    if (isTendril) {
-      xOff = (Math.random()-0.5) * BASE_HW * 1.80;
-    } else {
-      // Box-Muller Gaussian, clamped
-      const u = Math.sqrt(-2*Math.log(Math.random()+1e-9)) *
-                Math.cos(2*Math.PI*Math.random());
-      xOff = Math.max(-BASE_HW*0.96, Math.min(BASE_HW*0.96, u * BASE_HW * 0.40));
+  // ── Low-resolution work canvas (3× upscaled → silky smooth) ──
+  const NW = Math.max(60, Math.floor(FW / 3)) | 0;
+  const NH = Math.max(60, Math.floor(FH / 3)) | 0;
+  const off    = document.createElement('canvas');
+  off.width = NW; off.height = NH;
+  const offCtx = off.getContext('2d');
+  const img    = offCtx.createImageData(NW, NH);
+
+  // ── Photographic fire palette (RGBA, 9-stop) ──
+  // Sampled from real fire photography: black→burgundy→red-orange→orange→yellow-orange→white-yellow
+  const STOPS = [
+    [  0,   0,   0,   0,   0],
+    [ 14,  28,   0,   0,  22],
+    [ 36,  88,   4,   0, 105],
+    [ 68, 178,  24,   0, 188],
+    [108, 242,  72,   2, 228],
+    [152, 255, 148,  10, 248],
+    [192, 255, 212,  45, 254],
+    [222, 255, 244, 125, 255],
+    [255, 255, 252, 212, 255],
+  ];
+  const PAL = new Uint8Array(256 * 4);
+  for (let v = 0; v < 256; v++) {
+    let lo = STOPS[0], hi = STOPS[1];
+    for (let k = 0; k < STOPS.length - 1; k++) {
+      if (v >= STOPS[k][0] && v <= STOPS[k+1][0]) { lo = STOPS[k]; hi = STOPS[k+1]; break; }
+      lo = STOPS[k]; hi = STOPS[k];
     }
-    const norm = Math.abs(xOff) / BASE_HW; // 0=center, 1=edge
-    return {
-      xOff, norm, isTendril,
-      s1: Math.random()*22, s2: Math.random()*22,
-      s3: Math.random()*22, s4: Math.random()*22,
-      phase:  Math.random()*Math.PI*2,
-      spd:    0.38 + Math.random()*0.65,
-      // Center = taller, hotter; edge = shorter, cooler
-      hFrac:  isTendril
-                ? 0.30 + Math.random()*0.58
-                : Math.max(0.22, 1.0 - norm*0.62) * (0.72 + Math.random()*0.28),
-      wHalf:  isTendril
-                ? W*(0.006 + Math.random()*0.010)
-                : W*(0.024 + (1-norm)*0.022 + Math.random()*0.014),
-    };
-  };
-  const PRIMARY  = Array.from({length:32}, () => mkStrip(false));
-  const TENDRILS = Array.from({length:14}, () => mkStrip(true));
-  const ALL_STRIPS = [...PRIMARY, ...TENDRILS];
+    const span = hi[0] - lo[0];
+    const f = span > 0 ? (v - lo[0]) / span : 0;
+    PAL[v*4]   = (lo[1] + (hi[1]-lo[1])*f) | 0;
+    PAL[v*4+1] = (lo[2] + (hi[2]-lo[2])*f) | 0;
+    PAL[v*4+2] = (lo[3] + (hi[3]-lo[3])*f) | 0;
+    PAL[v*4+3] = (lo[4] + (hi[4]-lo[4])*f) | 0;
+  }
 
-  // ── Sparks & smoke ──
-  const sparks = [], smoke = [];
-  const spawnSpark = () => {
-    if (sparks.length >= 220) return;
-    const ang = -Math.PI*0.5 + (Math.random()-0.5)*Math.PI*0.88;
-    const spd = 1.6 + Math.random()*5.5;
-    sparks.push({
-      x: CX + (Math.random()-0.5)*BASE_HW*1.5,
-      y: BASE_Y - FIRE_H*(0.05 + Math.random()*0.58),
-      vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd,
-      life:1, decay:0.007+Math.random()*0.015, size:0.6+Math.random()*2.0,
-    });
-  };
-  const spawnSmoke = () => {
-    smoke.push({
-      x: CX+(Math.random()-0.5)*BASE_HW*0.9,
-      y: TIP_Y + (Math.random()-0.5)*FIRE_H*0.12,
-      vx:(Math.random()-0.5)*0.60, vy:-(0.18+Math.random()*0.42),
-      life:1, decay:0.004+Math.random()*0.006,
-      size:30+Math.random()*65, alpha:0.020+Math.random()*0.030,
-    });
+  // ── Domain-warped FBM noise ──
+  // Domain warping avoids the grid-like artifacts of simple summed sines.
+  // It offsets sample coordinates with a low-freq sine field before
+  // sampling the high-freq octaves → organic swirling patterns.
+  const fbm = (x, y, t) => {
+    // Low-frequency domain warp
+    const amp = 2.2;
+    const wx = Math.sin(x*0.32 + y*0.26 + t*0.44) * amp;
+    const wy = Math.cos(x*0.26 - y*0.32 + t*0.38) * amp;
+    const xw = x + wx, yw = y + wy;
+    // 4-octave FBM on warped coordinates
+    const o1 = Math.sin(xw*1.65 + yw*2.40 + t*0.76);
+    const o2 = Math.sin(xw*3.50 - yw*5.05 + t*1.48 + 1.30);
+    const o3 = Math.sin(xw*7.10 + yw*10.7 + t*2.85 + 2.65);
+    const o4 = Math.sin(xw*14.6 - yw*21.8 + t*5.20 + 4.40);
+    return o1*0.500 + o2*0.275 + o3*0.140 + o4*0.085; // ∈ [-1, 1]
   };
 
-  // ── Draw one bezier strip ──
-  // Each strip = cubic bezier with 4 independently turbulent control points
-  const drawStrip = (strip, time) => {
-    const { xOff, norm, s1, s2, s3, s4, phase, spd, hFrac, wHalf, isTendril } = strip;
-    const h  = FIRE_H * hFrac;
-    const hw = wHalf;
-    const bx = CX + xOff;
-    const by = BASE_Y;
-    const ty = by - h;
-
-    // Global sway (low-freq body motion)
-    const bodyDrift = Math.sin(time*spd + phase) * BASE_HW * 0.07;
-    // Per-control turbulent offsets (independent frequencies)
-    const dx1 = turb(s1, time,   0) * hw * 0.65 + bodyDrift*0.30;
-    const dx2 = turb(s2, time, 1.2) * hw * 0.80 + bodyDrift*0.55;
-    const dx3 = turb(s3, time, 2.5) * hw * 0.70 + bodyDrift*0.80;
-    const dx4 = turb(s4, time, 3.8) * hw * 0.55 + bodyDrift;
-
-    // Left arm: base-left → cp1 → cp2 → tip
-    // Right arm: tip → cp3 → cp4 → base-right
-    // The asymmetric turbulence on left/right creates the organic S-curl
-    ctx.beginPath();
-    ctx.moveTo(bx - hw, by);
-    ctx.bezierCurveTo(
-      bx - hw*0.45 + dx1, by - h*0.32,
-      bx - hw*0.12 + dx2, by - h*0.68,
-      bx + dx3,           ty
-    );
-    ctx.bezierCurveTo(
-      bx + hw*0.12 + dx2, by - h*0.68,
-      bx + hw*0.45 + dx4, by - h*0.32,
-      bx + hw,            by
-    );
-    ctx.closePath();
-
-    const g = ctx.createLinearGradient(bx, by, bx+dx3, ty);
-    if (isTendril) {
-      g.addColorStop(0,    'rgba(210, 68,  8, 0.70)');
-      g.addColorStop(0.38, 'rgba(165, 30,  3, 0.42)');
-      g.addColorStop(0.72, 'rgba(105, 10,  1, 0.14)');
-      g.addColorStop(1,    'rgba(0,0,0,0)');
-    } else if (norm < 0.18) {
-      // White-yellow hot core
-      g.addColorStop(0,    'rgba(255,245, 95, 0.95)');
-      g.addColorStop(0.12, 'rgba(255,195, 28, 0.88)');
-      g.addColorStop(0.35, 'rgba(255,128, 12, 0.72)');
-      g.addColorStop(0.62, 'rgba(225, 55,  5, 0.38)');
-      g.addColorStop(0.85, 'rgba(158, 22,  2, 0.12)');
-      g.addColorStop(1,    'rgba(0,0,0,0)');
-    } else if (norm < 0.52) {
-      // Main orange body
-      g.addColorStop(0,    'rgba(255,150, 16, 0.92)');
-      g.addColorStop(0.25, 'rgba(255, 90,  7, 0.76)');
-      g.addColorStop(0.52, 'rgba(225, 48,  5, 0.44)');
-      g.addColorStop(0.78, 'rgba(158, 22,  2, 0.15)');
-      g.addColorStop(1,    'rgba(0,0,0,0)');
-    } else {
-      // Outer deep-red edge
-      g.addColorStop(0,    'rgba(215, 55,  6, 0.84)');
-      g.addColorStop(0.30, 'rgba(178, 28,  3, 0.58)');
-      g.addColorStop(0.62, 'rgba(118, 12,  1, 0.22)');
-      g.addColorStop(0.85, 'rgba( 72,  5,  0, 0.07)');
-      g.addColorStop(1,    'rgba(0,0,0,0)');
-    }
-    ctx.fillStyle = g;
-    ctx.fill();
-  };
-
+  // Sparks
+  const sparks = [];
   let t = 0, ticker = 0;
+  const spawnSpark = () => {
+    if (sparks.length >= 210) return;
+    const ang = -Math.PI*0.5 + (Math.random()-0.5)*Math.PI*0.88;
+    const spd = 1.8 + Math.random()*5.5;
+    sparks.push({
+      x: CX + (Math.random()-0.5)*FW*0.48,
+      y: BASE_SCR - FH*(0.04 + Math.random()*0.58),
+      vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd,
+      life:1, decay:0.007+Math.random()*0.014, size:0.6+Math.random()*1.9,
+    });
+  };
+
+  // placeholder to satisfy old reference
+  const BASE_HW = FW / 2;
+  const FIRE_H  = FH;
+  const BASE_Y  = BASE_SCR;
+  const TIP_Y   = FY;
 
   const draw = () => {
     contentAnimId = requestAnimationFrame(draw);
-    t += 0.018; ticker++;
+    t += 0.016; ticker++;
     if (ticker % 2 === 0) spawnSpark();
-    if (ticker % 8 === 0) spawnSmoke();
 
-    // Pure black background
-    ctx.fillStyle = '#050100';
+    // ── Per-pixel fire texture via domain-warped FBM noise ──
+    for (let row = 0; row < NH; row++) {
+      const ny      = row / NH;         // 0=top, 1=bottom (screen convention)
+      const flowY   = ny + t * 0.52;   // upward advection (pattern flows up)
+
+      for (let col = 0; col < NW; col++) {
+        const nx  = col / NW;           // 0=left, 1=right
+        const idx = (row * NW + col) * 4;
+
+        // ── Flame shape envelope ──
+        // Width at this height: tapers toward the tip (low ny)
+        const widthAtH = Math.pow(ny, 0.36) * 0.94;
+        const distX    = Math.abs(nx - 0.5) * 2; // 0=center, 1=edge
+        if (widthAtH < 0.01 || distX >= widthAtH) {
+          img.data[idx + 3] = 0;
+          continue;
+        }
+        // Soft horizontal falloff (avoids hard geometric edge)
+        const envX = Math.pow(1 - distX / widthAtH, 1.25);
+        // Vertical: brighter toward base (photographic flame = hotter at base)
+        const envY = Math.pow(ny, 0.38);
+
+        // ── Noise → heat ──
+        // Raw noise ∈ [-1, 1]; threshold & gamma create dark gaps (real fire structure)
+        const raw   = fbm(nx * NW * 0.092, flowY * NH * 0.098, t);
+        // Shift bias toward positive so ~60% of pixels are lit
+        const biased = raw * 0.88 + 0.18;
+        // Power < 1: soft transition at zero crossing (no hard cutoff)
+        const flame  = Math.pow(Math.max(0, biased), 0.72);
+
+        // Final luminance 0..255
+        const heat = Math.min(255, flame * envX * envY * 272) | 0;
+
+        img.data[idx]     = PAL[heat * 4];
+        img.data[idx + 1] = PAL[heat * 4 + 1];
+        img.data[idx + 2] = PAL[heat * 4 + 2];
+        img.data[idx + 3] = PAL[heat * 4 + 3];
+      }
+    }
+    offCtx.putImageData(img, 0, 0);
+
+    // ── Background ──
+    ctx.fillStyle = '#060101';
     ctx.fillRect(0, 0, W, H);
 
-    // Very subtle warm ambient (barely visible — keeps photo feel)
-    const amb = ctx.createRadialGradient(CX, BASE_Y - FIRE_H*0.42, 0, CX, BASE_Y, W*0.62);
-    amb.addColorStop(0,   'rgba(255, 95, 14, 0.13)');
-    amb.addColorStop(0.5, 'rgba(160, 38,  5, 0.05)');
-    amb.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = amb; ctx.fillRect(0, 0, W, H);
+    // ── Scale up 3× with bilinear smoothing → silky texture ──
+    ctx.imageSmoothingEnabled  = true;
+    ctx.imageSmoothingQuality  = 'high';
+    ctx.drawImage(off, 0, 0, NW, NH, FX, FY, FW, FH);
 
-    // ── All flame strips: 'screen' (additive light) ──
-    // Overlapping strips naturally build up brightness at dense center
+    // ── Screen-blend luminous glow overlays ──
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
-    ALL_STRIPS.forEach(s => drawStrip(s, t));
-    ctx.restore();
 
-    // ── Inner luminous core (pulsing white-yellow zone at base) ──
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    const cf = 0.74 + 0.26*Math.sin(t*4.5 + 0.4);
-    const core = ctx.createRadialGradient(CX, BASE_Y - FIRE_H*0.09, 0,
-                                          CX, BASE_Y,              W*0.14);
-    core.addColorStop(0,    `rgba(255,255,210,${0.72*cf})`);
-    core.addColorStop(0.20, `rgba(255,210, 55,${0.45*cf})`);
-    core.addColorStop(0.52, `rgba(255,118, 16,${0.22*cf})`);
+    // Wide photographic bloom (fire lights up dark surround)
+    const ambMidY = BASE_SCR - FH * 0.44;
+    const ambGlow = ctx.createRadialGradient(CX, ambMidY, 0, CX, BASE_SCR, W * 0.60);
+    ambGlow.addColorStop(0,    'rgba(255, 92, 12, 0.20)');
+    ambGlow.addColorStop(0.42, 'rgba(160, 36,  5, 0.09)');
+    ambGlow.addColorStop(1,    'rgba(0,0,0,0)');
+    ctx.fillStyle = ambGlow; ctx.fillRect(0, 0, W, H);
+
+    // Pulsing hot core (white-yellow, near base)
+    const cf   = 0.74 + 0.26 * Math.sin(t * 4.6 + 0.5);
+    const core = ctx.createRadialGradient(
+      CX, BASE_SCR - FH * 0.09, 0,
+      CX, BASE_SCR,             W * 0.148
+    );
+    core.addColorStop(0,    `rgba(255,255,205,${0.68 * cf})`);
+    core.addColorStop(0.22, `rgba(255,208, 52,${0.40 * cf})`);
+    core.addColorStop(0.52, `rgba(255,112, 14,${0.18 * cf})`);
     core.addColorStop(1,    'rgba(0,0,0,0)');
     ctx.fillStyle = core; ctx.fillRect(0, 0, W, H);
 
-    // Secondary mid-body bright zone (gives the "roiling ball" center)
-    const mid = ctx.createRadialGradient(
-      CX + Math.sin(t*0.55)*BASE_HW*0.18,
-      BASE_Y - FIRE_H*0.38, 0,
-      CX, BASE_Y - FIRE_H*0.38, W*0.11
-    );
-    mid.addColorStop(0,   `rgba(255,175, 30,${0.38*cf})`);
-    mid.addColorStop(0.45,`rgba(230, 75,  8,${0.18*cf})`);
-    mid.addColorStop(1,   'rgba(0,0,0,0)');
-    ctx.fillStyle = mid; ctx.fillRect(0, 0, W, H);
-    ctx.restore();
-
-    // ── Smoke (faint wispy tendrils at tip) ──
-    ctx.save();
-    for (let i = smoke.length-1; i >= 0; i--) {
-      const s = smoke[i];
-      s.x += s.vx + (Math.random()-0.5)*0.22; s.y += s.vy;
-      s.size += 0.75; s.life -= s.decay;
-      if (s.life <= 0) { smoke.splice(i,1); continue; }
-      ctx.globalAlpha = s.alpha * Math.pow(s.life, 0.6);
-      const sg = ctx.createRadialGradient(s.x,s.y,0,s.x,s.y,s.size);
-      sg.addColorStop(0,'rgba(50,40,34,1)'); sg.addColorStop(1,'rgba(18,14,12,0)');
-      ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(s.x,s.y,s.size,0,Math.PI*2); ctx.fill();
-    }
+    // Drifting mid-body hot spot (gives roiling internal brightness)
+    const driftX = CX + Math.sin(t * 0.52) * FW * 0.09;
+    const driftY = BASE_SCR - FH * 0.38;
+    const midG   = ctx.createRadialGradient(driftX, driftY, 0, driftX, driftY, W * 0.10);
+    midG.addColorStop(0,   `rgba(255,172, 28,${0.36 * cf})`);
+    midG.addColorStop(0.45,`rgba(230, 72,  7,${0.16 * cf})`);
+    midG.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = midG; ctx.fillRect(0, 0, W, H);
     ctx.restore();
 
     // ── Sparks / flying embers ──
     ctx.save();
-    for (let i = sparks.length-1; i >= 0; i--) {
+    for (let i = sparks.length - 1; i >= 0; i--) {
       const s = sparks[i];
       s.x += s.vx; s.y += s.vy;
-      s.vx += (Math.random()-0.5)*0.24;
-      s.vy += 0.055;
+      s.vx += (Math.random() - 0.5) * 0.24;
+      s.vy += 0.056;
       s.life -= s.decay;
-      if (s.life <= 0) { sparks.splice(i,1); continue; }
+      if (s.life <= 0) { sparks.splice(i, 1); continue; }
       const tl = s.life;
       let cr, cg, cb;
-      if (tl > 0.65)      { cr=255; cg=225; cb=Math.round(60+120*tl); }
-      else if (tl > 0.30) { cr=255; cg=Math.round(55+165*tl); cb=0; }
-      else                { cr=Math.round(255*(tl/0.30)*0.82+46); cg=Math.round(10*tl/0.30); cb=0; }
-      ctx.globalAlpha = Math.min(1,tl*2.6)*0.88;
-      const sr  = s.size*tl*6;
-      const sgr = ctx.createRadialGradient(s.x,s.y,0,s.x,s.y,sr);
-      sgr.addColorStop(0,`rgba(${cr},${cg},${cb},0.52)`);
-      sgr.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=sgr; ctx.beginPath(); ctx.arc(s.x,s.y,sr,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle=`rgb(${cr},${cg},${cb})`;
-      ctx.beginPath(); ctx.arc(s.x,s.y,s.size*tl,0,Math.PI*2); ctx.fill();
+      if (tl > 0.65)       { cr=255; cg=222; cb=(60+110*tl)|0; }
+      else if (tl > 0.30)  { cr=255; cg=(52+162*tl)|0; cb=0; }
+      else                 { cr=(255*(tl/0.30)*0.82+44)|0; cg=(8*tl/0.30)|0; cb=0; }
+      ctx.globalAlpha = Math.min(1, tl * 2.6) * 0.88;
+      const sr  = s.size * tl * 6;
+      const sgr = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, sr);
+      sgr.addColorStop(0, `rgba(${cr},${cg},${cb},0.52)`);
+      sgr.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = sgr;
+      ctx.beginPath(); ctx.arc(s.x, s.y, sr, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.size * tl, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
 
