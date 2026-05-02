@@ -1108,8 +1108,9 @@ function animWater(ctx, W, H) {
         const i = y*COLS+x;
         const h = curr[i];
 
-        const gx = (curr[y*COLS+x+1]   - curr[y*COLS+x-1])   * 0.007;
-        const gy = (curr[(y+1)*COLS+x] - curr[(y-1)*COLS+x]) * 0.007;
+        // Amplify normal gradient so ripple rings are clearly visible
+        const gx = (curr[y*COLS+x+1]   - curr[y*COLS+x-1])   * 0.022;
+        const gy = (curr[(y+1)*COLS+x] - curr[(y-1)*COLS+x]) * 0.022;
 
         const nx = -gx, ny = -gy, nz = 1.0;
         const nl  = Math.sqrt(nx*nx + ny*ny + nz*nz);
@@ -1121,25 +1122,15 @@ function animWater(ctx, W, H) {
         const rz = lz - 2*(lz*nz/nl)*(nz/nl);
         const rll = Math.sqrt(rx*rx+ry*ry+rz*rz);
         const vDotR = Math.max(0, rz/rll);
-        const spec  = Math.pow(vDotR, 72);   // tight sun glint
-        const spec2 = Math.pow(vDotR, 10) * 0.28; // broad diffuse haze
+        const spec  = Math.pow(vDotR, 48);   // ripple crest glint
+        const spec2 = Math.pow(vDotR, 8) * 0.32; // broad diffuse ring haze
 
         const depth = Math.max(0, Math.min(1, (h+120)/240));
-        const foam  = Math.max(0, (h - 80) / 160);  // subtle foam at crests only
-
         let r, g, b;
-        if (foam > 0.06) {
-          // Very subtle foam — stays in navy range, no bright white
-          const f = Math.min(1, foam * 1.4);
-          r = Math.min(255, Math.round( 8 + f*22  + spec*55)  | 0);
-          g = Math.min(255, Math.round(15 + f*30  + spec*70)  | 0);
-          b = Math.min(255, Math.round(52 + f*55  + spec*120) | 0);
-        } else {
-          // Deep navy — very dark base, tiny ripple variation
-          r = Math.min(255, Math.round( 2 + depth*5   + diff*7   + spec*40  + spec2*12) | 0);
-          g = Math.min(255, Math.round( 5 + depth*12  + diff*18  + spec*55  + spec2*18) | 0);
-          b = Math.min(255, Math.round(28 + depth*28  + diff*38  + spec*110 + spec2*35) | 0);
-        }
+        // Dark navy base + boosted ripple shading for visible rings
+        r = Math.min(255, Math.round( 1 + depth*4   + diff*18  + spec*30  + spec2*8 ) | 0);
+        g = Math.min(255, Math.round( 3 + depth*7   + diff*38  + spec*42  + spec2*14) | 0);
+        b = Math.min(255, Math.round(18 + depth*16  + diff*72  + spec*85  + spec2*28) | 0);
 
         img.data[i*4]   = r;
         img.data[i*4+1] = g;
@@ -1149,8 +1140,8 @@ function animWater(ctx, W, H) {
     }
     offCtx.putImageData(img, 0, 0);
 
-    // Deep navy background — solid, no gradient pattern
-    ctx.fillStyle = '#070C1C';
+    // Darkest navy background — no pattern, no gradient
+    ctx.fillStyle = '#020508';
     ctx.fillRect(0, 0, W, H);
 
     // Wave pixels (scaled up)
@@ -1158,13 +1149,7 @@ function animWater(ctx, W, H) {
 
     // Caustic: removed (was the visible dot pattern)
 
-    // Sun glint: very faint moon-on-water feel, no bright halo
-    drawSunGlint();
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = 0.10;
-    ctx.drawImage(glintOff, 0, 0, W, H);
-    ctx.restore();
+    // Sun glint: removed
 
     // Spray particles
     ctx.save();
